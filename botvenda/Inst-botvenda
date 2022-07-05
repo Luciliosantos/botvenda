@@ -10,11 +10,11 @@
     echo -e "\033[1;32mINICIANDO BOT TESTE \033[0m\n"
     cd $HOME/BOT
     rm -rf $HOME/BOT/botssh
-    wget https://raw.githubusercontent.com/Luciliosantos/botteste/main/botteste/botssh >/dev/null 2>&1
-    chmod 777 botssh
+    wget https://raw.githubusercontent.com/Luciliosantos/botvenda/main/botteste/botvenda >/dev/null 2>&1
+    chmod 777 botvenda
     echo ""
     sleep 1
-    screen -dmS bot_teste ./botssh $token > /dev/null 2>&1
+    screen -dmS bot_teste ./botvenda $token > /dev/null 2>&1
     clear
     echo "BOT ATIVADO"
     menu
@@ -24,4 +24,3 @@
     echo "BOT DESATIVADO"
     menu
 }
-
