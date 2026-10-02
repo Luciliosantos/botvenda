@@ -1,26 +1,101 @@
 #!/bin/bash
-[[ $(screen -list| grep -c 'bot_teste') == '0' ]] && {
-    clear
-    echo -e "\E[44;1;37m     ATIVACÃO BOT SSH TESTE     \E[0m"
-    echo ""
-    echo -ne "\n\033[1;32mINFORME O TOKEN\033[1;37m: "
-    read token
-    clear
-    echo ""
-    echo -e "\033[1;32mINICIANDO BOT TESTE \033[0m\n"
-    cd $HOME/BOT
-    rm -rf $HOME/BOT/botssh
-    wget https://raw.githubusercontent.com/Luciliosantos/botvenda/main/botteste/botteste >/dev/null 2>&1
-    chmod 777 botssh
-    echo ""
-    sleep 1
-    screen -dmS bot_teste ./botssh $token > /dev/null 2>&1
-    clear
-    echo "BOT ATIVADO"
-    menu
-} || {
-    screen -r -S "bot_teste" -X quit
-    clear
-    echo "BOT DESATIVADO"
-    menu
-}
+
+set -e
+
+REPO="https://raw.githubusercontent.com/Luciliosantos/botvenda/main/botvenda"
+BOT_DIR="/root/BOT"
+BOT="$BOT_DIR/botvenda"
+SHELLBOT="$BOT_DIR/ShellBot.sh"
+
+clear
+echo "======================================"
+echo "     INSTALADOR BOTVENDA TECH NET"
+echo "======================================"
+echo
+
+if [[ $EUID -ne 0 ]]; then
+    echo "ERRO: execute como root."
+    exit 1
+fi
+
+if [[ ! -d /etc/SSHPlus ]]; then
+    echo "ERRO: este VPS não possui o painel SSHPlus."
+    echo "Instale o painel SSHPlus primeiro."
+    exit 1
+fi
+
+echo "[1/5] Verificando dependências..."
+apt-get update -qq
+apt-get install -y -qq wget curl screen at >/dev/null
+
+mkdir -p "$BOT_DIR"
+
+echo "[2/5] Localizando ShellBot..."
+
+if [[ ! -f "$SHELLBOT" ]]; then
+    for f in \
+        /root/MEGA-clone/Sistema/ShellBot.sh \
+        /root/MEGA-clone/Modulos/ShellBot.sh \
+        /usr/local/bin/ShellBot.sh \
+        /usr/bin/ShellBot.sh
+    do
+        if [[ -f "$f" ]]; then
+            cp "$f" "$SHELLBOT"
+            break
+        fi
+    done
+fi
+
+if [[ ! -f "$SHELLBOT" ]]; then
+    echo "ERRO: ShellBot.sh não encontrado."
+    echo "O painel SSHPlus instalado não possui o ShellBot esperado."
+    exit 1
+fi
+
+echo "[3/5] Baixando BotVenda..."
+wget -qO "$BOT" "$REPO/botvenda"
+
+if [[ ! -s "$BOT" ]]; then
+    echo "ERRO: não foi possível baixar o botvenda."
+    exit 1
+fi
+
+chmod 700 "$BOT"
+chmod 644 "$SHELLBOT"
+
+echo "[4/5] Verificando bot..."
+bash -n "$BOT"
+
+if screen -list | grep -q 'bot_venda'; then
+    screen -S bot_venda -X quit
+fi
+
+echo
+echo "[5/5] Configuração"
+echo
+read -r -p "INFORME O TOKEN DO BOT: " TOKEN
+
+if [[ -z "$TOKEN" ]]; then
+    echo "ERRO: token vazio."
+    exit 1
+fi
+
+screen -dmS bot_venda "$BOT" "$TOKEN"
+
+sleep 2
+
+if screen -list | grep -q 'bot_venda'; then
+    echo
+    echo "======================================"
+    echo "       BOTVENDA ATIVADO"
+    echo "======================================"
+    echo
+    echo "Sessão: bot_venda"
+    echo "Bot: $BOT"
+else
+    echo
+    echo "ERRO: o BotVenda não permaneceu ativo."
+    echo "Use:"
+    echo "screen -S bot_venda -X hardcopy /tmp/botvenda.log"
+    exit 1
+fi
