@@ -3,7 +3,7 @@
 
 INSTALAÇÃO SOMENTE PARA SCRIPT QUE TENHA BOT TESTE
 
-bash <(wget -qO- https://raw.githubusercontent.com/Luciliosantos/botvenda/main/botvenda/Inst-botvenda)
+apt install wget -y; bash <(wget -qO- https://raw.githubusercontent.com/Luciliosantos/botvenda/main/Inst-botvenda)
 
 
 Telegrama @NETxx0
