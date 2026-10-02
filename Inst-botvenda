@@ -2,7 +2,7 @@
 
 set -e
 
-REPO="https://raw.githubusercontent.com/Luciliosantos/botvenda/main/botvenda"
+REPO="https://raw.githubusercontent.com/Luciliosantos/botvenda/main"
 BOT_DIR="/root/BOT"
 BOT="$BOT_DIR/botvenda"
 SHELLBOT="$BOT_DIR/ShellBot.sh"
@@ -53,7 +53,14 @@ if [[ ! -f "$SHELLBOT" ]]; then
 fi
 
 echo "[3/5] Baixando BotVenda..."
-wget -qO "$BOT" "$REPO/botvenda"
+wget -qO "$BOT" "$REPO/botvenda.sh"
+wget -qO "$BOT_DIR/gerar_pix.sh" "$REPO/gerar_pix.sh"
+wget -qO "$BOT_DIR/acompanhar_pagamento.sh" "$REPO/acompanhar_pagamento.sh"
+wget -qO "$BOT_DIR/mercadopago.token" "$REPO/mercadopago.token"
+
+chmod 700 "$BOT_DIR/gerar_pix.sh"
+chmod 700 "$BOT_DIR/acompanhar_pagamento.sh"
+chmod 600 "$BOT_DIR/mercadopago.token"
 
 if [[ ! -s "$BOT" ]]; then
     echo "ERRO: não foi possível baixar o botvenda."
@@ -63,7 +70,23 @@ fi
 chmod 700 "$BOT"
 chmod 644 "$SHELLBOT"
 
-echo "[4/5] Verificando bot..."
+echo "[4/5] Verificando arquivos de pagamento..."
+if [[ ! -s "$BOT_DIR/gerar_pix.sh" ]]; then
+    echo "ERRO: gerar_pix.sh não foi baixado."
+    exit 1
+fi
+
+if [[ ! -s "$BOT_DIR/acompanhar_pagamento.sh" ]]; then
+    echo "ERRO: acompanhar_pagamento.sh não foi baixado."
+    exit 1
+fi
+
+if [[ ! -s "$BOT_DIR/mercadopago.token" ]]; then
+    echo "ERRO: token do Mercado Pago não foi baixado."
+    exit 1
+fi
+
+echo "[5/5] Verificando bot..."
 bash -n "$BOT"
 
 if screen -list | grep -q 'bot_venda'; then
@@ -80,6 +103,7 @@ if [[ -z "$TOKEN" ]]; then
     exit 1
 fi
 
+cd "$BOT_DIR"
 screen -dmS bot_venda "$BOT" "$TOKEN"
 
 sleep 2

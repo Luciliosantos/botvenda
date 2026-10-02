@@ -43,7 +43,7 @@ rm -rf /etc/SSHPlus/userteste/$usuario.sh" > /etc/SSHPlus/userteste/$usuario.sh
     echo ${callback_query_from_id} >> lista
     # - ENVIA O SSH
     ShellBot.sendMessage --chat_id ${callback_query_message_chat_id} \
-    --text "$(echo -e "✅ ✘<b>Criado com sucesso</b>✘ ✅\n\nIP: $(cat /etc/IP)\nUSUARIO: <code>$usuario</code>\nSENHA: <code>$senha</code>\n\n⏳ Expira em: $tempo Hora")" \
+    --text "$(echo -e "✅ ✘<b>Criado com sucesso</b>✘ ✅\n\nSERVIDOR: BR\nUSUARIO: <code>$usuario</code>\nSENHA: <code>$senha</code>\n\n⏳ Expira em: $tempo Hora")" \
     --parse_mode html
     return 0
 }
@@ -65,7 +65,7 @@ comprarssh() {
     local chat="${callback_query_message_chat_id[$id]}"
 
     local dados
-    dados="$(/root/BOT/gerar_pix.sh "$chat" 2>/dev/null)"
+    dados="$(/root/BOT/gerar_pix.sh "$chat" "$api_bot" 2>/root/BOT/pix_exec_error.log)"
 
     local payment_id
     payment_id="$(echo "$dados" | sed -n '1p')"
@@ -83,7 +83,7 @@ comprarssh() {
         --parse_mode html \
         --text "💰 TECH NET — ACESSO SSH 30 DIAS
 
-💵 Valor: R$ 1,00
+💵 Valor: R$ 15,00
 
 📲 PIX COPIA E COLA:
 
