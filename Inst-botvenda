@@ -7,6 +7,9 @@ BOT_DIR="/root/BOT"
 BOT="$BOT_DIR/botvenda"
 SHELLBOT="$BOT_DIR/ShellBot.sh"
 
+LICENCA_API="http://191.252.218.217:8787"
+PRODUTO="BOTVENDA"
+
 clear
 echo "======================================"
 echo "     INSTALADOR BOTVENDA TECH NET"
@@ -24,41 +27,251 @@ if [[ ! -d /etc/SSHPlus ]]; then
     exit 1
 fi
 
-echo "[1/5] Verificando dependências..."
-apt-get update -qq
-apt-get install -y -qq wget curl screen at >/dev/null
+# ==========================================================
+# 1 - DETECÇÃO DO SISTEMA E PYTHON
+# ==========================================================
+
+echo "[1/5] Verificando sistema e dependências..."
+echo
+
+if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+else
+    echo "ERRO: não foi possível identificar o sistema operacional."
+    exit 1
+fi
+
+echo "Sistema: $PRETTY_NAME"
+
+# ----------------------------------------------------------
+# NÃO TROCAR O PYTHON DO SISTEMA À FORÇA
+# O APT depende do Python fornecido pela própria distribuição.
+# ----------------------------------------------------------
+
+SYSTEM_PYTHON="/usr/bin/python3"
+
+if [[ -x "$SYSTEM_PYTHON" ]]; then
+    PYTHON_VERSION="$("$SYSTEM_PYTHON" --version 2>&1 || true)"
+    echo "Python do sistema: $PYTHON_VERSION"
+else
+    echo "Python3 não encontrado. Instalando..."
+fi
+
+# ==========================================================
+# CORREÇÃO DO python3-apt / apt_pkg
+# ==========================================================
+
+echo
+echo "Verificando suporte do APT..."
+
+APT_OK=0
+
+if command -v python3 >/dev/null 2>&1; then
+    if python3 -c "import apt_pkg" >/dev/null 2>&1; then
+        APT_OK=1
+        echo "OK: python3-apt funcionando."
+    else
+        echo "Aviso: python3-apt/apt_pkg não está funcionando."
+    fi
+fi
+
+# Se o apt_pkg estiver quebrado, tenta descobrir a versão correta
+# do Python fornecido pelo sistema.
+if [[ $APT_OK -eq 0 ]]; then
+
+    echo "Detectando Python compatível com o sistema..."
+
+    CORRETO=""
+
+    # Ubuntu 20.04
+    if [[ "$ID" == "ubuntu" && "$VERSION_ID" == "20.04" ]]; then
+        if [[ -x /usr/bin/python3.8 ]]; then
+            CORRETO="/usr/bin/python3.8"
+        fi
+    fi
+
+    # Ubuntu 18.04
+    if [[ "$ID" == "ubuntu" && "$VERSION_ID" == "18.04" ]]; then
+        if [[ -x /usr/bin/python3.6 ]]; then
+            CORRETO="/usr/bin/python3.6"
+        fi
+    fi
+
+    # Debian 10
+    if [[ "$ID" == "debian" && "$VERSION_ID" == "10" ]]; then
+        if [[ -x /usr/bin/python3.7 ]]; then
+            CORRETO="/usr/bin/python3.7"
+        fi
+    fi
+
+    # Debian 11
+    if [[ "$ID" == "debian" && "$VERSION_ID" == "11" ]]; then
+        if [[ -x /usr/bin/python3.9 ]]; then
+            CORRETO="/usr/bin/python3.9"
+        fi
+    fi
+
+    # Debian 12 / Ubuntu mais novos
+    if [[ -z "$CORRETO" ]]; then
+        for PY in \
+            /usr/bin/python3.12 \
+            /usr/bin/python3.11 \
+            /usr/bin/python3.10 \
+            /usr/bin/python3.9 \
+            /usr/bin/python3.8 \
+            /usr/bin/python3.7 \
+            /usr/bin/python3.6
+        do
+            if [[ -x "$PY" ]]; then
+                if "$PY" -c "import apt_pkg" >/dev/null 2>&1; then
+                    CORRETO="$PY"
+                    break
+                fi
+            fi
+        done
+    fi
+
+    if [[ -n "$CORRETO" ]]; then
+        echo "Python compatível encontrado: $CORRETO"
+
+        # Corrige somente se python3 estiver apontando para algo incompatível.
+        CURRENT_LINK="$(readlink -f /usr/bin/python3 2>/dev/null || true)"
+
+        if [[ "$CURRENT_LINK" != "$CORRETO" ]]; then
+            echo "Corrigindo /usr/bin/python3..."
+            ln -sf "$CORRETO" /usr/bin/python3
+        fi
+
+        SYSTEM_PYTHON="$CORRETO"
+    fi
+fi
+
+# ==========================================================
+# APT
+# ==========================================================
+
+echo
+echo "Atualizando lista de pacotes..."
+
+# Caso o hook command-not-found esteja quebrado, desativa
+# temporariamente para permitir a recuperação do APT.
+
+CNF_HOOK="/etc/apt/apt.conf.d/50command-not-found"
+CNF_DISABLED="/etc/apt/apt.conf.d/50command-not-found.disabled"
+
+if [[ -f "$CNF_HOOK" ]] && ! python3 -c "import apt_pkg" >/dev/null 2>&1; then
+    echo "Desativando temporariamente hook command-not-found..."
+    mv "$CNF_HOOK" "$CNF_DISABLED"
+    HOOK_DESATIVADO=1
+fi
+
+apt-get update -qq || true
+
+echo
+echo "Instalando dependências..."
+
+apt-get install -y \
+    python3 \
+    python3-apt \
+    python3-pip \
+    wget \
+    curl \
+    screen \
+    at
+
+# Reativa o hook
+if [[ "${HOOK_DESATIVADO:-0}" == "1" ]]; then
+    if [[ -f "$CNF_DISABLED" ]]; then
+        mv "$CNF_DISABLED" "$CNF_HOOK"
+    fi
+fi
+
+# Teste final do Python/Apt
+if python3 -c "import apt_pkg" >/dev/null 2>&1; then
+    echo "OK: Python + APT funcionando."
+else
+    echo "AVISO: apt_pkg ainda não pôde ser carregado."
+    echo "O instalador continuará, pois o BotVenda não depende diretamente dele."
+fi
+
+# ==========================================================
+# PYTHON PARA APLICAÇÕES
+# ==========================================================
+
+echo
+echo "Detectando Python disponível para aplicações..."
+
+PYTHON_BIN=""
+
+for PY in \
+    /usr/bin/python3.12 \
+    /usr/bin/python3.11 \
+    /usr/bin/python3.10 \
+    /usr/bin/python3.9 \
+    /usr/bin/python3.8 \
+    /usr/bin/python3.7 \
+    /usr/bin/python3.6 \
+    /usr/bin/python3
+do
+    if [[ -x "$PY" ]]; then
+        PYTHON_BIN="$PY"
+        break
+    fi
+done
+
+if [[ -z "$PYTHON_BIN" ]]; then
+    echo "ERRO: nenhum Python compatível encontrado."
+    exit 1
+fi
+
+echo "Python selecionado: $PYTHON_BIN"
+echo "Versão: $($PYTHON_BIN --version 2>&1)"
+
+# ==========================================================
+# 2 - SHELLBOT
+# ==========================================================
+
+echo
+echo "[2/5] Localizando ShellBot..."
 
 mkdir -p "$BOT_DIR"
 
-echo "[2/5] Localizando ShellBot..."
-
 if [[ ! -f "$SHELLBOT" ]]; then
+
     for f in \
         /root/MEGA-clone/Sistema/ShellBot.sh \
         /root/MEGA-clone/Modulos/ShellBot.sh \
         /usr/local/bin/ShellBot.sh \
-        /usr/bin/ShellBot.sh
+        /usr/bin/ShellBot.sh \
+        /etc/SSHPlus/ShellBot.sh
     do
         if [[ -f "$f" ]]; then
+            echo "ShellBot encontrado: $f"
             cp "$f" "$SHELLBOT"
             break
         fi
     done
+
 fi
 
 if [[ ! -f "$SHELLBOT" ]]; then
+    echo
     echo "ERRO: ShellBot.sh não encontrado."
     echo "O painel SSHPlus instalado não possui o ShellBot esperado."
     exit 1
 fi
 
+chmod 644 "$SHELLBOT"
+
+# ==========================================================
+# 3 - LICENÇA
+# ==========================================================
+
 echo
 echo "======================================"
 echo "        🔐 VALIDAÇÃO DA LICENÇA"
 echo "======================================"
-
-LICENCA_API="http://191.252.218.217:8787"
-PRODUTO="BOTVENDA"
+echo
 
 read -r -p "INFORME A LICENÇA DO BOT VENDA: " LICENCA
 
@@ -69,43 +282,69 @@ fi
 
 VPS_ID="$(cat /etc/machine-id 2>/dev/null || hostname)"
 
-echo "Validando licença..."
-
-RESPOSTA="$(curl -fsS --max-time 15     -X POST "$LICENCA_API/api/licenca/validar"     -H "Content-Type: application/json"     --data "{\"codigo\":\"$LICENCA\",\"produto\":\"$PRODUTO\",\"vps_id\":\"$VPS_ID\"}" 2>/dev/null)" || {
-    echo "ERRO: não foi possível conectar ao servidor de licenças."
-    echo "API: $LICENCA_API"
-    exit 1
-}
-
-if ! echo "$RESPOSTA" | grep -q '"ok":true'; then
-    echo
-    echo "❌ LICENÇA NÃO AUTORIZADA"
-    echo "Resposta: $RESPOSTA"
+if [[ -z "$VPS_ID" ]]; then
+    echo "ERRO: não foi possível identificar este VPS."
     exit 1
 fi
 
 echo
-echo "✅ LICENÇA VALIDADA COM SUCESSO"
+echo "VPS ID: $VPS_ID"
+echo "Produto: $PRODUTO"
+echo "Validando licença..."
+echo
+
+RESPOSTA="$(
+    curl -fsS \
+        --connect-timeout 10 \
+        --max-time 20 \
+        -X POST "$LICENCA_API/api/licenca/validar" \
+        -H "Content-Type: application/json" \
+        --data "{\"codigo\":\"$LICENCA\",\"produto\":\"$PRODUTO\",\"vps_id\":\"$VPS_ID\"}" \
+        2>/dev/null
+)" || {
+
+    echo
+    echo "ERRO: não foi possível conectar ao servidor de licenças."
+    echo "API: $LICENCA_API"
+    echo
+    exit 1
+}
+
+if ! echo "$RESPOSTA" | grep -q '"ok":true'; then
+
+    echo
+    echo "======================================"
+    echo "       ❌ LICENÇA NÃO AUTORIZADA"
+    echo "======================================"
+    echo
+    echo "Resposta: $RESPOSTA"
+    echo
+    exit 1
+fi
+
+echo
+echo "======================================"
+echo "   ✅ LICENÇA VALIDADA COM SUCESSO"
+echo "======================================"
+echo
 echo "$RESPOSTA"
 echo
 
-echo "[3/5] Baixando BotVenda..."
+# ==========================================================
+# 4 - DOWNLOAD
+# ==========================================================
+
+echo "[4/5] Baixando BotVenda..."
+
 wget -qO "$BOT" "$REPO/botvenda.sh"
 wget -qO "$BOT_DIR/gerar_pix.sh" "$REPO/gerar_pix.sh"
 wget -qO "$BOT_DIR/acompanhar_pagamento.sh" "$REPO/acompanhar_pagamento.sh"
-
-chmod 700 "$BOT_DIR/gerar_pix.sh"
-chmod 700 "$BOT_DIR/acompanhar_pagamento.sh"
 
 if [[ ! -s "$BOT" ]]; then
     echo "ERRO: não foi possível baixar o botvenda."
     exit 1
 fi
 
-chmod 700 "$BOT"
-chmod 644 "$SHELLBOT"
-
-echo "[4/5] Verificando arquivos de pagamento..."
 if [[ ! -s "$BOT_DIR/gerar_pix.sh" ]]; then
     echo "ERRO: gerar_pix.sh não foi baixado."
     exit 1
@@ -116,13 +355,24 @@ if [[ ! -s "$BOT_DIR/acompanhar_pagamento.sh" ]]; then
     exit 1
 fi
 
-if screen -list | grep -q 'bot_venda'; then
-    screen -S bot_venda -X quit
-fi
+chmod 700 "$BOT"
+chmod 700 "$BOT_DIR/gerar_pix.sh"
+chmod 700 "$BOT_DIR/acompanhar_pagamento.sh"
+
+echo "Arquivos baixados com sucesso."
+
+# ==========================================================
+# 5 - CONFIGURAÇÃO
+# ==========================================================
 
 echo
 echo "[5/5] Configuração"
 echo
+
+if screen -list | grep -q 'bot_venda'; then
+    screen -S bot_venda -X quit || true
+fi
+
 read -r -p "INFORME O TOKEN DO BOT: " TOKEN
 
 if [[ -z "$TOKEN" ]]; then
@@ -132,6 +382,7 @@ fi
 
 echo
 echo "💳 CONFIGURAÇÃO MERCADO PAGO"
+
 read -r -p "INFORME O ACCESS TOKEN DO MERCADO PAGO: " MP_TOKEN
 
 if [[ -z "$MP_TOKEN" ]]; then
@@ -142,23 +393,44 @@ fi
 echo "$MP_TOKEN" > "$BOT_DIR/mercadopago.token"
 chmod 600 "$BOT_DIR/mercadopago.token"
 
+# ==========================================================
+# INICIAR BOT
+# ==========================================================
+
 cd "$BOT_DIR"
+
+echo
+echo "Iniciando BotVenda..."
+
 screen -dmS bot_venda "$BOT" "$TOKEN"
 
-sleep 2
+sleep 3
 
 if screen -list | grep -q 'bot_venda'; then
+
     echo
     echo "======================================"
-    echo "       BOTVENDA ATIVADO"
+    echo "       ✅ BOTVENDA ATIVADO"
     echo "======================================"
     echo
     echo "Sessão: bot_venda"
     echo "Bot: $BOT"
-else
+    echo "Python: $PYTHON_BIN"
     echo
-    echo "ERRO: o BotVenda não permaneceu ativo."
+    echo "Para visualizar:"
+    echo "screen -r bot_venda"
+    echo
+
+else
+
+    echo
+    echo "======================================"
+    echo "        ❌ ERRO AO INICIAR BOT"
+    echo "======================================"
+    echo
     echo "Use:"
     echo "screen -S bot_venda -X hardcopy /tmp/botvenda.log"
+    echo
     exit 1
+
 fi
