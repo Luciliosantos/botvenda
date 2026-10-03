@@ -3,17 +3,40 @@ clear
 #-----🟢---TECH NET----🟢-------#
 source ShellBot.sh
 touch lista
-[[ -z $1 ]] && {
-    clear && echo "INFORME O TOKEN" && return 0
-}
 [[ ! -e RESET ]] && touch RESET
-api_bot=$1
+
+if [[ -z "$1" ]]; then
+    clear
+    echo "======================================"
+    echo "        BOT SSH VPN - CONFIGURAÇÃO"
+    echo "======================================"
+    read -rsp "INFORME O TOKEN DO BOT: " api_bot
+    echo
+else
+    api_bot="$1"
+fi
+
+if [[ -z "$api_bot" ]]; then
+    echo "ERRO: token não informado."
+    exit 1
+fi
+
+if ! curl -fsS "https://api.telegram.org/bot${api_bot}/getMe" | grep -q '"ok":true'; then
+    echo "ERRO: token do Telegram inválido."
+    exit 1
+fi
+
 ShellBot.init --token "$api_bot" --monitor --flush
 ShellBot.username
 
 # - Funcao menu
 menu() {
-    curl -sS -X POST "https://api.telegram.org/bot${api_bot}/sendPhoto" -F "chat_id=${message_chat_id[$id]}" -F "photo=@/root/BOT/TECH_NET.png" -F "reply_markup=${keyboard1}" >/dev/null
+    ShellBot.sendMessage --chat_id "${message_chat_id[$id]}" \
+        --parse_mode html \
+        --text "╔══════════════════════╗
+║ 📶  BOT SSH VPN  📶 ║
+╚══════════════════════╝" \
+        --reply_markup="${keyboard1}" >/dev/null
     return 0
 }
 # - funcao criar ssh
