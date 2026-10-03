@@ -58,7 +58,7 @@ echo "        🔐 VALIDAÇÃO DA LICENÇA"
 echo "======================================"
 
 LICENCA_API="http://191.252.218.217:8787"
-PRODUTO="Script BOT-VENDAS"
+PRODUTO="BOTVENDA"
 
 read -r -p "INFORME A LICENÇA DO BOT VENDA: " LICENCA
 
