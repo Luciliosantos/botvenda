@@ -43,11 +43,6 @@ fi
 
 echo "Sistema: $PRETTY_NAME"
 
-# ----------------------------------------------------------
-# NÃO TROCAR O PYTHON DO SISTEMA À FORÇA
-# O APT depende do Python fornecido pela própria distribuição.
-# ----------------------------------------------------------
-
 SYSTEM_PYTHON="/usr/bin/python3"
 
 if [[ -x "$SYSTEM_PYTHON" ]]; then
@@ -75,43 +70,36 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
-# Se o apt_pkg estiver quebrado, tenta descobrir a versão correta
-# do Python fornecido pelo sistema.
 if [[ $APT_OK -eq 0 ]]; then
 
     echo "Detectando Python compatível com o sistema..."
 
     CORRETO=""
 
-    # Ubuntu 20.04
     if [[ "$ID" == "ubuntu" && "$VERSION_ID" == "20.04" ]]; then
         if [[ -x /usr/bin/python3.8 ]]; then
             CORRETO="/usr/bin/python3.8"
         fi
     fi
 
-    # Ubuntu 18.04
     if [[ "$ID" == "ubuntu" && "$VERSION_ID" == "18.04" ]]; then
         if [[ -x /usr/bin/python3.6 ]]; then
             CORRETO="/usr/bin/python3.6"
         fi
     fi
 
-    # Debian 10
     if [[ "$ID" == "debian" && "$VERSION_ID" == "10" ]]; then
         if [[ -x /usr/bin/python3.7 ]]; then
             CORRETO="/usr/bin/python3.7"
         fi
     fi
 
-    # Debian 11
     if [[ "$ID" == "debian" && "$VERSION_ID" == "11" ]]; then
         if [[ -x /usr/bin/python3.9 ]]; then
             CORRETO="/usr/bin/python3.9"
         fi
     fi
 
-    # Debian 12 / Ubuntu mais novos
     if [[ -z "$CORRETO" ]]; then
         for PY in \
             /usr/bin/python3.12 \
@@ -134,7 +122,6 @@ if [[ $APT_OK -eq 0 ]]; then
     if [[ -n "$CORRETO" ]]; then
         echo "Python compatível encontrado: $CORRETO"
 
-        # Corrige somente se python3 estiver apontando para algo incompatível.
         CURRENT_LINK="$(readlink -f /usr/bin/python3 2>/dev/null || true)"
 
         if [[ "$CURRENT_LINK" != "$CORRETO" ]]; then
@@ -152,9 +139,6 @@ fi
 
 echo
 echo "Atualizando lista de pacotes..."
-
-# Caso o hook command-not-found esteja quebrado, desativa
-# temporariamente para permitir a recuperação do APT.
 
 CNF_HOOK="/etc/apt/apt.conf.d/50command-not-found"
 CNF_DISABLED="/etc/apt/apt.conf.d/50command-not-found.disabled"
@@ -179,19 +163,16 @@ apt-get install -y \
     screen \
     at
 
-# Reativa o hook
 if [[ "${HOOK_DESATIVADO:-0}" == "1" ]]; then
     if [[ -f "$CNF_DISABLED" ]]; then
         mv "$CNF_DISABLED" "$CNF_HOOK"
     fi
 fi
 
-# Teste final do Python/Apt
 if python3 -c "import apt_pkg" >/dev/null 2>&1; then
     echo "OK: Python + APT funcionando."
 else
     echo "AVISO: apt_pkg ainda não pôde ser carregado."
-    echo "O instalador continuará, pois o BotVenda não depende diretamente dele."
 fi
 
 # ==========================================================
@@ -257,7 +238,6 @@ fi
 if [[ ! -f "$SHELLBOT" ]]; then
     echo
     echo "ERRO: ShellBot.sh não encontrado."
-    echo "O painel SSHPlus instalado não possui o ShellBot esperado."
     exit 1
 fi
 
@@ -302,23 +282,19 @@ RESPOSTA="$(
         --data "{\"codigo\":\"$LICENCA\",\"produto\":\"$PRODUTO\",\"vps_id\":\"$VPS_ID\"}" \
         2>/dev/null
 )" || {
-
     echo
     echo "ERRO: não foi possível conectar ao servidor de licenças."
     echo "API: $LICENCA_API"
-    echo
     exit 1
 }
 
 if ! echo "$RESPOSTA" | grep -q '"ok":true'; then
-
     echo
     echo "======================================"
     echo "       ❌ LICENÇA NÃO AUTORIZADA"
     echo "======================================"
     echo
     echo "Resposta: $RESPOSTA"
-    echo
     exit 1
 fi
 
@@ -380,6 +356,36 @@ if [[ -z "$TOKEN" ]]; then
     exit 1
 fi
 
+# ==========================================================
+# ID DO PROPRIETÁRIO
+# ==========================================================
+
+echo
+echo "======================================"
+echo "       👤 PROPRIETÁRIO DO BOT"
+echo "======================================"
+echo
+echo "Informe o Telegram ID do proprietário."
+echo "Esse ID terá acesso à administração do APK."
+echo
+
+read -r -p "TELEGRAM ID DO PROPRIETÁRIO: " ADMIN_ID
+
+if [[ ! "$ADMIN_ID" =~ ^[0-9]+$ ]]; then
+    echo "ERRO: Telegram ID inválido."
+    exit 1
+fi
+
+echo "$ADMIN_ID" > "$BOT_DIR/admin_id"
+chmod 600 "$BOT_DIR/admin_id"
+
+echo
+echo "✅ Proprietário configurado: $ADMIN_ID"
+
+# ==========================================================
+# MERCADO PAGO
+# ==========================================================
+
 echo
 echo "💳 CONFIGURAÇÃO MERCADO PAGO"
 
@@ -392,6 +398,13 @@ fi
 
 echo "$MP_TOKEN" > "$BOT_DIR/mercadopago.token"
 chmod 600 "$BOT_DIR/mercadopago.token"
+
+# ==========================================================
+# DIRETÓRIO DO APK
+# ==========================================================
+
+mkdir -p "$BOT_DIR/app"
+chmod 700 "$BOT_DIR/app"
 
 # ==========================================================
 # INICIAR BOT
@@ -415,7 +428,8 @@ if screen -list | grep -q 'bot_venda'; then
     echo
     echo "Sessão: bot_venda"
     echo "Bot: $BOT"
-    echo "Python: $PYTHON_BIN"
+    echo "Administrador: $ADMIN_ID"
+    echo "Diretório APK: $BOT_DIR/app"
     echo
     echo "Para visualizar:"
     echo "screen -r bot_venda"
@@ -432,5 +446,4 @@ else
     echo "screen -S bot_venda -X hardcopy /tmp/botvenda.log"
     echo
     exit 1
-
 fi
