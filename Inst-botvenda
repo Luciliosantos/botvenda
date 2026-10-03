@@ -52,6 +52,43 @@ if [[ ! -f "$SHELLBOT" ]]; then
     exit 1
 fi
 
+echo
+echo "======================================"
+echo "        🔐 VALIDAÇÃO DA LICENÇA"
+echo "======================================"
+
+LICENCA_API="http://191.252.218.217:8787"
+PRODUTO="Script BOT-VENDAS"
+
+read -r -p "INFORME A LICENÇA DO BOT VENDA: " LICENCA
+
+if [[ -z "$LICENCA" ]]; then
+    echo "ERRO: licença não informada."
+    exit 1
+fi
+
+VPS_ID="$(cat /etc/machine-id 2>/dev/null || hostname)"
+
+echo "Validando licença..."
+
+RESPOSTA="$(curl -fsS --max-time 15     -X POST "$LICENCA_API/api/licenca/validar"     -H "Content-Type: application/json"     --data "{\"codigo\":\"$LICENCA\",\"produto\":\"$PRODUTO\",\"vps_id\":\"$VPS_ID\"}" 2>/dev/null)" || {
+    echo "ERRO: não foi possível conectar ao servidor de licenças."
+    echo "API: $LICENCA_API"
+    exit 1
+}
+
+if ! echo "$RESPOSTA" | grep -q '"ok":true'; then
+    echo
+    echo "❌ LICENÇA NÃO AUTORIZADA"
+    echo "Resposta: $RESPOSTA"
+    exit 1
+fi
+
+echo
+echo "✅ LICENÇA VALIDADA COM SUCESSO"
+echo "$RESPOSTA"
+echo
+
 echo "[3/5] Baixando BotVenda..."
 wget -qO "$BOT" "$REPO/botvenda.sh"
 wget -qO "$BOT_DIR/gerar_pix.sh" "$REPO/gerar_pix.sh"
