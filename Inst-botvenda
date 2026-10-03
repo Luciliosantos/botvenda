@@ -56,11 +56,9 @@ echo "[3/5] Baixando BotVenda..."
 wget -qO "$BOT" "$REPO/botvenda.sh"
 wget -qO "$BOT_DIR/gerar_pix.sh" "$REPO/gerar_pix.sh"
 wget -qO "$BOT_DIR/acompanhar_pagamento.sh" "$REPO/acompanhar_pagamento.sh"
-wget -qO "$BOT_DIR/mercadopago.token" "$REPO/mercadopago.token"
 
 chmod 700 "$BOT_DIR/gerar_pix.sh"
 chmod 700 "$BOT_DIR/acompanhar_pagamento.sh"
-chmod 600 "$BOT_DIR/mercadopago.token"
 
 if [[ ! -s "$BOT" ]]; then
     echo "ERRO: não foi possível baixar o botvenda."
@@ -81,14 +79,6 @@ if [[ ! -s "$BOT_DIR/acompanhar_pagamento.sh" ]]; then
     exit 1
 fi
 
-if [[ ! -s "$BOT_DIR/mercadopago.token" ]]; then
-    echo "ERRO: token do Mercado Pago não foi baixado."
-    exit 1
-fi
-
-echo "[5/5] Verificando bot..."
-bash -n "$BOT"
-
 if screen -list | grep -q 'bot_venda'; then
     screen -S bot_venda -X quit
 fi
@@ -102,6 +92,18 @@ if [[ -z "$TOKEN" ]]; then
     echo "ERRO: token vazio."
     exit 1
 fi
+
+echo
+echo "💳 CONFIGURAÇÃO MERCADO PAGO"
+read -r -p "INFORME O ACCESS TOKEN DO MERCADO PAGO: " MP_TOKEN
+
+if [[ -z "$MP_TOKEN" ]]; then
+    echo "ERRO: Access Token do Mercado Pago vazio."
+    exit 1
+fi
+
+echo "$MP_TOKEN" > "$BOT_DIR/mercadopago.token"
+chmod 600 "$BOT_DIR/mercadopago.token"
 
 cd "$BOT_DIR"
 screen -dmS bot_venda "$BOT" "$TOKEN"
