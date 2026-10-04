@@ -1,0 +1,15 @@
+[Unit]
+Description=BOT-VENDAS TECH NET VPN
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/BOT
+ExecStart=/root/BOT/iniciar_botvenda.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
