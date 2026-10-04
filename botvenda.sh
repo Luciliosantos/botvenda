@@ -1,3 +1,4 @@
+cat > /root/BOT/botvenda <<'EOF'
 #!/bin/bash
 clear
 
@@ -60,8 +61,10 @@ ShellBot.username
 
 menu() {
 
-    local chat="${message_chat_id[$id]}"
-    local user_id="${message_from_id[$id]}"
+    local chat="${1:-${message_chat_id[$id]:-${callback_query_message_chat_id[$id]}}}"
+    local user_id="${message_from_id[$id]:-${callback_query_from_id[$id]}}"
+
+    [[ -z "$chat" ]] && return 0
 
     unset keyboard_menu
     keyboard_menu=''
@@ -115,10 +118,10 @@ menu() {
 
 criarteste() {
 
-    [[ $(grep -wc "${callback_query_from_id}" lista) != '0' ]] && {
+    [[ $(grep -wc "${callback_query_from_id[$id]}" lista) != '0' ]] && {
 
         ShellBot.sendMessage \
-            --chat_id "${callback_query_message_chat_id}" \
+            --chat_id "${callback_query_message_chat_id[$id]}" \
             --text "VC JA CRIOU @NETxL4 SSH HOJE !"
 
         return 0
@@ -135,6 +138,9 @@ criarteste() {
 
     (echo "$senha";echo "$senha") | passwd "$usuario" > /dev/null 2>&1
 
+    mkdir -p /etc/SSHPlus/senha
+    mkdir -p /etc/SSHPlus/userteste
+
     echo "$senha" > "/etc/SSHPlus/senha/$usuario"
 
     echo "$usuario $limite" >> /root/usuarios.db
@@ -144,7 +150,7 @@ pkill -f \"$usuario\"
 userdel --force \"$usuario\"
 grep -v ^$usuario[[:space:]] /root/usuarios.db > /tmp/ph
 cat /tmp/ph > /root/usuarios.db
-rm /etc/SSHPlus/senha/$usuario > /dev/null 2>&1
+rm -f /etc/SSHPlus/senha/$usuario
 rm -rf /etc/SSHPlus/userteste/$usuario.sh" \
         > "/etc/SSHPlus/userteste/$usuario.sh"
 
@@ -152,10 +158,10 @@ rm -rf /etc/SSHPlus/userteste/$usuario.sh" \
 
     at -f "/etc/SSHPlus/userteste/$usuario.sh" now + "$tempo" hour > /dev/null 2>&1
 
-    echo "${callback_query_from_id}" >> lista
+    echo "${callback_query_from_id[$id]}" >> lista
 
     ShellBot.sendMessage \
-        --chat_id "${callback_query_message_chat_id}" \
+        --chat_id "${callback_query_message_chat_id[$id]}" \
         --parse_mode html \
         --text "✅ <b>Criado com sucesso</b> ✅
 
@@ -176,9 +182,9 @@ enviarapp() {
 
     local chat="${callback_query_message_chat_id[$id]}"
 
-    ShellBot.answerCallbackQuery \
-        --callback_query_id "${callback_query_id[$id]}" \
-        --text "♻️✉ VERIFICANDO APLICATIVO..."
+    if [[ -z "$chat" ]]; then
+        return 0
+    fi
 
     if [[ ! -f "$APP_FILE" ]]; then
 
@@ -227,8 +233,8 @@ adminmenu() {
 
     if [[ "$uid" != "$ADMIN_ID" ]]; then
 
-        ShellBot.answerCallbackQuery \
-            --callback_query_id "${callback_query_id[$id]}" \
+        ShellBot.sendMessage \
+            --chat_id "$chat" \
             --text "❌ Acesso não autorizado."
 
         return 0
@@ -323,17 +329,20 @@ admin_remove() {
     fi
 
     if [[ -f "$APP_FILE" ]]; then
+
         rm -f "$APP_FILE"
         rm -f "$APP_DIR/.aguardando_apk"
 
         ShellBot.sendMessage \
             --chat_id "$chat" \
             --text "🗑️ APK removido com sucesso."
+
     else
 
         ShellBot.sendMessage \
             --chat_id "$chat" \
             --text "ℹ️ Não existe APK cadastrado."
+
     fi
 
     return 0
@@ -366,11 +375,13 @@ Arquivo: <code>base.apk</code>
 Tamanho: <code>$tamanho</code>
 
 ✅ Disponível para seus clientes."
+
     else
 
         ShellBot.sendMessage \
             --chat_id "$chat" \
             --text "❌ Nenhum APK cadastrado."
+
     fi
 
     return 0
@@ -411,6 +422,7 @@ receber_apk() {
     fi
 
     local file_info
+
     file_info="$(curl -fsS \
         "https://api.telegram.org/bot${api_bot}/getFile?file_id=${document_file_id}")" || {
 
@@ -422,6 +434,7 @@ receber_apk() {
     }
 
     local file_path
+
     file_path="$(echo "$file_info" | sed -n 's/.*"file_path":"\([^"]*\)".*/\1/p')"
 
     if [[ -z "$file_path" ]]; then
@@ -492,6 +505,7 @@ comprarssh() {
     local chat="${callback_query_message_chat_id[$id]}"
 
     local dados
+
     dados="$(/root/BOT/gerar_pix.sh \
         "$chat" \
         "$api_bot" \
@@ -565,6 +579,10 @@ ShellBot.regHandleFunction \
     --function admin_status \
     --callback_data admin_status
 
+ShellBot.regHandleFunction \
+    --function menu \
+    --callback_data admin_back
+
 # ==========================================================
 # LOOP
 # ==========================================================
@@ -578,7 +596,7 @@ while :; do
 
     ShellBot.getUpdates \
         --limit 100 \
-        --offset $(ShellBot.OffsetNext) \
+        --offset "$(ShellBot.OffsetNext)" \
         --timeout 30
 
     for id in $(ShellBot.ListUpdates); do
@@ -586,6 +604,20 @@ while :; do
         (
 
             callback="${callback_query_data[$id]}"
+            callback_id="${callback_query_id[$id]}"
+
+            # ==================================================
+            # RESPONDE AO TELEGRAM IMEDIATAMENTE
+            # Remove o efeito de carregamento do botão
+            # ==================================================
+
+            if [[ -n "$callback_id" ]]; then
+
+                ShellBot.answerCallbackQuery \
+                    --callback_query_id "$callback_id" \
+                    >/dev/null 2>&1
+
+            fi
 
             case "$callback" in
 
@@ -618,7 +650,7 @@ while :; do
                     ;;
 
                 admin_back)
-                    menu
+                    menu "${callback_query_message_chat_id[$id]}"
                     ;;
 
             esac
@@ -650,3 +682,6 @@ while :; do
     done
 
 done
+EOF
+
+bash -n /root/BOT/botvenda && echo "✅ SINTAXE OK"
