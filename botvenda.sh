@@ -1,4 +1,3 @@
-cat > /root/BOT/botvenda <<'EOF'
 #!/bin/bash
 clear
 
@@ -12,6 +11,22 @@ BOT_DIR="/root/BOT"
 ADMIN_FILE="$BOT_DIR/admin_id"
 APP_DIR="$BOT_DIR/app"
 APP_FILE="$APP_DIR/base.apk"
+VALOR_FILE="$BOT_DIR/valor_ssh"
+
+# ==========================================================
+# VALOR PADRÃO DO SSH
+# ==========================================================
+
+if [[ ! -s "$VALOR_FILE" ]]; then
+    echo "15.00" > "$VALOR_FILE"
+fi
+
+valor_ssh="$(tr -d '[:space:]' < "$VALOR_FILE")"
+
+if ! [[ "$valor_ssh" =~ ^[0-9]+([.][0-9]{1,2})?$ ]]; then
+    valor_ssh="15.00"
+    echo "$valor_ssh" > "$VALOR_FILE"
+fi
 
 # ==========================================================
 # TOKEN
@@ -66,6 +81,15 @@ menu() {
 
     [[ -z "$chat" ]] && return 0
 
+    # Apaga o menu anterior quando chamado por botão
+    local old_message="${callback_query_message_message_id[$id]}"
+
+    if [[ -n "$old_message" ]]; then
+        ShellBot.deleteMessage \
+            --chat_id "$chat" \
+            --message_id "$old_message" >/dev/null 2>&1
+    fi
+
     unset keyboard_menu
     keyboard_menu=''
 
@@ -87,7 +111,6 @@ menu() {
         --text '💰 COMPRAR ACESSO 🔐' \
         --callback_data 'comprarssh'
 
-    # Administração aparece SOMENTE para o proprietário
     if [[ -n "$ADMIN_ID" && "$user_id" == "$ADMIN_ID" ]]; then
 
         ShellBot.InlineKeyboardButton \
@@ -182,9 +205,7 @@ enviarapp() {
 
     local chat="${callback_query_message_chat_id[$id]}"
 
-    if [[ -z "$chat" ]]; then
-        return 0
-    fi
+    [[ -z "$chat" ]] && return 0
 
     if [[ ! -f "$APP_FILE" ]]; then
 
@@ -232,12 +253,16 @@ adminmenu() {
     local uid="${callback_query_from_id[$id]}"
 
     if [[ "$uid" != "$ADMIN_ID" ]]; then
-
-        ShellBot.sendMessage \
-            --chat_id "$chat" \
-            --text "❌ Acesso não autorizado."
-
         return 0
+    fi
+
+    # Apaga o menu anterior
+    local old_message="${callback_query_message_message_id[$id]}"
+
+    if [[ -n "$old_message" ]]; then
+        ShellBot.deleteMessage \
+            --chat_id "$chat" \
+            --message_id "$old_message" >/dev/null 2>&1
     fi
 
     unset admin_keyboard
@@ -264,6 +289,12 @@ adminmenu() {
     ShellBot.InlineKeyboardButton \
         --button 'admin_keyboard' \
         --line 4 \
+        --text '💰 ALTERAR VALOR SSH' \
+        --callback_data 'admin_valor'
+
+    ShellBot.InlineKeyboardButton \
+        --button 'admin_keyboard' \
+        --line 5 \
         --text '↩️ VOLTAR' \
         --callback_data 'admin_back'
 
@@ -275,8 +306,124 @@ adminmenu() {
         --parse_mode html \
         --text "⚙️ <b>ADMINISTRAÇÃO</b>
 
-Gerencie o aplicativo que será disponibilizado aos seus clientes." \
+Gerencie o aplicativo e o valor do acesso SSH.
+
+💰 SSH 30 dias:
+<b>R$ ${valor_ssh}</b>" \
         --reply_markup="$markup"
+
+    return 0
+}
+
+# ==========================================================
+# ALTERAR VALOR SSH
+# ==========================================================
+
+admin_valor() {
+
+    local chat="${callback_query_message_chat_id[$id]}"
+    local uid="${callback_query_from_id[$id]}"
+
+    if [[ "$uid" != "$ADMIN_ID" ]]; then
+        return 0
+    fi
+
+    ShellBot.sendMessage \
+        --chat_id "$chat" \
+        --parse_mode html \
+        --text "💰 <b>ALTERAR VALOR DO SSH</b>
+
+📅 Período: <b>30 dias</b>
+
+💵 Valor atual: <b>R$ ${valor_ssh}</b>
+
+Digite o novo valor.
+
+Exemplo:
+<code>20.00</code>
+
+⚠️ Digite somente o valor, sem R$."
+
+    echo "$chat" > "$BOT_DIR/.aguardando_valor"
+    echo "$uid" > "$BOT_DIR/.aguardando_valor_admin"
+
+    return 0
+}
+
+# ==========================================================
+# SALVAR NOVO VALOR
+# ==========================================================
+
+salvar_valor() {
+
+    local chat="${message_chat_id[$id]}"
+    local uid="${message_from_id[$id]}"
+    local texto="${message_text[$id]}"
+
+    [[ -z "$chat" || -z "$uid" ]] && return 0
+
+    [[ "$uid" != "$ADMIN_ID" ]] && return 0
+
+    [[ ! -f "$BOT_DIR/.aguardando_valor" ]] && return 0
+
+    local chat_aguardando
+    chat_aguardando="$(tr -d '[:space:]' < "$BOT_DIR/.aguardando_valor")"
+
+    [[ "$chat" != "$chat_aguardando" ]] && return 0
+
+    texto="${texto//,/\.}"
+    texto="$(echo "$texto" | tr -d '[:space:]')"
+
+    if ! [[ "$texto" =~ ^[0-9]+([.][0-9]{1,2})?$ ]]; then
+
+        ShellBot.sendMessage \
+            --chat_id "$chat" \
+            --text "❌ Valor inválido.
+
+Digite somente números.
+
+Exemplo:
+20.00"
+
+        return 0
+    fi
+
+    local novo_valor
+    novo_valor="$(printf "%.2f" "$texto" 2>/dev/null)" || {
+
+        ShellBot.sendMessage \
+            --chat_id "$chat" \
+            --text "❌ Não foi possível interpretar esse valor."
+
+        return 0
+    }
+
+    if ! awk "BEGIN {exit !($novo_valor > 0 && $novo_valor <= 10000)}"; then
+
+        ShellBot.sendMessage \
+            --chat_id "$chat" \
+            --text "❌ Valor fora do limite.
+
+Digite um valor maior que R$ 0,00 e menor ou igual a R$ 10.000,00."
+
+        return 0
+    fi
+
+    echo "$novo_valor" > "$VALOR_FILE"
+    valor_ssh="$novo_valor"
+
+    rm -f "$BOT_DIR/.aguardando_valor"
+    rm -f "$BOT_DIR/.aguardando_valor_admin"
+
+    ShellBot.sendMessage \
+        --chat_id "$chat" \
+        --parse_mode html \
+        --text "✅ <b>VALOR ALTERADO</b>
+
+📅 SSH 30 dias
+💰 Novo valor: <b>R$ ${novo_valor}</b>
+
+O próximo PIX já será gerado com esse valor."
 
     return 0
 }
@@ -290,9 +437,7 @@ admin_upload() {
     local chat="${callback_query_message_chat_id[$id]}"
     local uid="${callback_query_from_id[$id]}"
 
-    if [[ "$uid" != "$ADMIN_ID" ]]; then
-        return 0
-    fi
+    [[ "$uid" != "$ADMIN_ID" ]] && return 0
 
     mkdir -p "$APP_DIR"
     chmod 700 "$APP_DIR"
@@ -324,9 +469,7 @@ admin_remove() {
     local chat="${callback_query_message_chat_id[$id]}"
     local uid="${callback_query_from_id[$id]}"
 
-    if [[ "$uid" != "$ADMIN_ID" ]]; then
-        return 0
-    fi
+    [[ "$uid" != "$ADMIN_ID" ]] && return 0
 
     if [[ -f "$APP_FILE" ]]; then
 
@@ -357,9 +500,7 @@ admin_status() {
     local chat="${callback_query_message_chat_id[$id]}"
     local uid="${callback_query_from_id[$id]}"
 
-    if [[ "$uid" != "$ADMIN_ID" ]]; then
-        return 0
-    fi
+    [[ "$uid" != "$ADMIN_ID" ]] && return 0
 
     if [[ -f "$APP_FILE" ]]; then
 
@@ -388,7 +529,7 @@ Tamanho: <code>$tamanho</code>
 }
 
 # ==========================================================
-# RECEBER APK ENVIADO PELO ADMIN
+# RECEBER APK
 # ==========================================================
 
 receber_apk() {
@@ -396,19 +537,12 @@ receber_apk() {
     local chat="${message_chat_id[$id]}"
     local uid="${message_from_id[$id]}"
 
-    if [[ "$uid" != "$ADMIN_ID" ]]; then
-        return 0
-    fi
-
-    if [[ ! -f "$APP_DIR/.aguardando_apk" ]]; then
-        return 0
-    fi
+    [[ "$uid" != "$ADMIN_ID" ]] && return 0
+    [[ ! -f "$APP_DIR/.aguardando_apk" ]] && return 0
 
     local document_file_id="${message_document_file_id[$id]}"
 
-    if [[ -z "$document_file_id" ]]; then
-        return 0
-    fi
+    [[ -z "$document_file_id" ]] && return 0
 
     local document_name="${message_document_file_name[$id]}"
 
@@ -437,14 +571,14 @@ receber_apk() {
 
     file_path="$(echo "$file_info" | sed -n 's/.*"file_path":"\([^"]*\)".*/\1/p')"
 
-    if [[ -z "$file_path" ]]; then
+    [[ -z "$file_path" ]] && {
 
         ShellBot.sendMessage \
             --chat_id "$chat" \
             --text "❌ Telegram não retornou o arquivo."
 
         return 0
-    fi
+    }
 
     mkdir -p "$APP_DIR"
 
@@ -463,7 +597,7 @@ receber_apk() {
         return 0
     fi
 
-    if [[ ! -s "$tmp_apk" ]]; then
+    [[ ! -s "$tmp_apk" ]] && {
 
         rm -f "$tmp_apk"
 
@@ -472,7 +606,7 @@ receber_apk() {
             --text "❌ O arquivo recebido está vazio."
 
         return 0
-    fi
+    }
 
     mv "$tmp_apk" "$APP_FILE"
     chmod 600 "$APP_FILE"
@@ -504,15 +638,21 @@ comprarssh() {
 
     local chat="${callback_query_message_chat_id[$id]}"
 
+    [[ -z "$chat" ]] && return 0
+
     local dados
 
     dados="$(/root/BOT/gerar_pix.sh \
         "$chat" \
         "$api_bot" \
+        "$valor_ssh" \
         2>/root/BOT/pix_exec_error.log)"
 
     local payment_id
     payment_id="$(echo "$dados" | sed -n '1p')"
+
+    local valor_pago
+    valor_pago="$(echo "$dados" | sed -n '2p')"
 
     local qr
     qr="$(echo "$dados" | sed -n '3p')"
@@ -526,14 +666,16 @@ comprarssh() {
         return 0
     fi
 
+    [[ -z "$valor_pago" ]] && valor_pago="$valor_ssh"
+
     ShellBot.sendMessage \
         --chat_id "$chat" \
         --parse_mode html \
-        --text "💰 TECH NET — ACESSO SSH 30 DIAS
+        --text "💰 <b>TECH NET — ACESSO SSH 30 DIAS</b>
 
-💵 Valor: R$ 15,00
+💵 Valor: <b>R$ ${valor_pago}</b>
 
-📲 PIX COPIA E COLA:
+📲 <b>PIX COPIA E COLA:</b>
 
 <pre>$qr</pre>
 
@@ -542,7 +684,7 @@ comprarssh() {
 ⏳ Após o pagamento, a confirmação é automática.
 🔐 O acesso SSH será enviado aqui neste Telegram.
 
-🧾 ID do pagamento: $payment_id"
+🧾 ID do pagamento: <code>$payment_id</code>"
 
     return 0
 }
@@ -580,6 +722,10 @@ ShellBot.regHandleFunction \
     --callback_data admin_status
 
 ShellBot.regHandleFunction \
+    --function admin_valor \
+    --callback_data admin_valor
+
+ShellBot.regHandleFunction \
     --function menu \
     --callback_data admin_back
 
@@ -606,11 +752,7 @@ while :; do
             callback="${callback_query_data[$id]}"
             callback_id="${callback_query_id[$id]}"
 
-            # ==================================================
-            # RESPONDE AO TELEGRAM IMEDIATAMENTE
-            # Remove o efeito de carregamento do botão
-            # ==================================================
-
+            # Responde imediatamente ao clique
             if [[ -n "$callback_id" ]]; then
 
                 ShellBot.answerCallbackQuery \
@@ -649,6 +791,10 @@ while :; do
                     admin_status
                     ;;
 
+                admin_valor)
+                    admin_valor
+                    ;;
+
                 admin_back)
                     menu "${callback_query_message_chat_id[$id]}"
                     ;;
@@ -656,7 +802,19 @@ while :; do
             esac
 
             # ==================================================
-            # RECEBER DOCUMENTO/APK
+            # RECEBER NOVO VALOR DO SSH
+            # ==================================================
+
+            if [[ -n "${message_text[$id]}" ]]; then
+
+                if [[ -f "$BOT_DIR/.aguardando_valor" ]]; then
+                    salvar_valor
+                fi
+
+            fi
+
+            # ==================================================
+            # RECEBER APK
             # ==================================================
 
             if [[ -n "${message_document_file_id[$id]}" ]]; then
@@ -682,6 +840,3 @@ while :; do
     done
 
 done
-EOF
-
-bash -n /root/BOT/botvenda && echo "✅ SINTAXE OK"
